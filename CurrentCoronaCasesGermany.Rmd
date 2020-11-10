@@ -146,6 +146,7 @@ for (t in 30:1) {
   dataCovGermany$Date <- format(Sys.Date()-t, format="%m-%d-%Y")
   dataCovGermany$Date <- parse_date_time(dataCovGermany$Date, "mdy")
   dataCovGermany$New  <- (dataCovGermany$Confirmed-confirmedYesterday)
+  names(df) <- names(dataCovGermany)
   df <- rbind(df, dataCovGermany) 
   confirmedYesterday <- dataCovGermany$Confirmed
 }
