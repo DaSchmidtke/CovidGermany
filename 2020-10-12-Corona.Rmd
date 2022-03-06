@@ -1,0 +1,224 @@
+---
+title: "Covid-19 (Update)"
+subtitle: "Covid-19 Statistics for Germany"
+description: "Visualisation of current cumulative cases of Covid-19 based on the data repository of the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University."
+author: "Daniel Schmidtke"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+image: "img/bg-sunset_small.JPG"
+published: true
+output:
+  html_document:
+    df_print: paged
+categories: ["R"]
+tags: ["Corona", "Plotly", "ggplot2", "R-Markdown"]
+weight: 1 
+classoption: landscape
+--- 
+
+## About this blog post
+
+This post provides some basic visualizations of recent Covid-19 data (cumulative cases and day-to day changes in these number by state) from Germany. I am well aware of the fact that there are plenty of such visualizations all across the internet. Since I am quite new to blogging, my main motivation for writing this post was teaching myself how to include data from other repositories in **R-Markdown** documents for static and interactive visualizations using **ggplot** and **Plotly**. The topic was secondary, but still I will try to keep this blog up to date for those of you who came here for the Covid-19 data. A link to the .rmd file can be found at the bottom of this page for those of you interested in the R code, instead.
+
+On mobile devices, use landscape mode for the interactive graphs to be displayed correctly.
+
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE)
+```
+
+## Cumulative, verified cases of Covid-19 in Germany 
+
+```{r libaries, include=FALSE}
+
+library(rio)
+library(ggplot2)
+library(lubridate)
+library(plotly)
+
+```
+
+```{r, echo=FALSE, out.width="100%",fig.asp = 1} 
+dataCovConfirmed <- import('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv')
+dataCovDeaths <- import('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv')
+dataCovRecovered <- import('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv')
+
+
+# Confirmed
+dataCovConfirmed <- as.data.frame(t(as.matrix(dataCovConfirmed)))
+my.names <- dataCovConfirmed[2,]
+colnames(dataCovConfirmed) <- my.names
+dataCovConfirmed <- dataCovConfirmed[5:nrow(dataCovConfirmed),]
+dataCovConfirmed$Date <- parse_date_time(rownames(dataCovConfirmed), "mdy")
+dataCovConfirmed$Quality <- as.factor("Confirmed")
+
+# Recovered
+dataCovRecovered <- as.data.frame(t(as.matrix(dataCovRecovered)))
+my.names <- dataCovRecovered[2,]
+colnames(dataCovRecovered) <- my.names
+dataCovRecovered <- dataCovRecovered[5:nrow(dataCovRecovered),]
+dataCovRecovered$Date <- parse_date_time(rownames(dataCovRecovered), "mdy")
+dataCovRecovered$Quality <- as.factor("Recovered")
+
+# "Remove" estimation error in the reported number of recovered cases on Jan 27th 2021
+dataCovRecovered$Germany[372] <- ((as.integer(dataCovRecovered$Germany[371]) + as.integer(dataCovRecovered$Germany[373]))/2)
+    
+# Dead
+dataCovDeaths <- as.data.frame(t(as.matrix(dataCovDeaths)))
+my.names <- dataCovDeaths[2,]
+colnames(dataCovDeaths) <- my.names
+dataCovDeaths <- dataCovDeaths[5:nrow(dataCovDeaths),]
+dataCovDeaths$Date <- parse_date_time(rownames(dataCovDeaths), "mdy")
+dataCovDeaths$Quality <- as.factor("Deceased")
+
+# Active
+dataCovActive <- dataCovDeaths
+dataCovActive$Quality <- as.factor("Active")
+dataCovActive$Germany <- (as.integer(dataCovConfirmed$Germany)- as.integer(dataCovRecovered$Germany)-as.integer(dataCovDeaths$Germany))
+
+data <- data.frame(
+  day = c(dataCovConfirmed$Date, dataCovConfirmed$Date, dataCovConfirmed$Date, dataCovActive$Date),
+  value = c(as.integer(dataCovConfirmed$Germany), as.integer(dataCovRecovered$Germany), as.integer(dataCovDeaths$Germany), as.integer(dataCovActive$Germany)),
+  quality = c(as.character(dataCovConfirmed$Quality), as.character(dataCovRecovered$Quality), as.character(dataCovDeaths$Quality), as.character(dataCovActive$Quality))
+  )
+
+data$quality <- as.factor(data$quality)
+
+##### Jjohn Hopkins stopped listing "recovered cases" for Germany
+data$value[(nrow(data)/4*3+562):nrow(data)] <- NA
+data$value[(nrow(data)/4*1+562):(nrow(data)/4*2+1)] <- NA
+
+
+
+# Basic line plot
+p <- ggplot(data, aes(x=day, y=(value/1000), color=quality)) +
+  geom_line() + 
+  xlab("Date") + 
+  ylab("Cumulative numbers in thousands") +
+  #ggtitle("Covid-19 - Confirmed Cases in Germany") +
+  scale_color_manual(values=c("red", "#E69F00", "#999999", "#56B4E9")) +
+  theme(plot.background = element_rect(fill = "grey95"),
+        panel.background = element_rect(fill = "white", colour = "black"),
+        panel.grid.major = element_line(colour = "grey85"),
+        legend.background = element_rect(fill = "grey95"),
+        panel.border = element_rect(fill = NA, colour = "black"),
+        legend.title = element_blank(),
+        plot.margin = unit(c(1,1,1,1), "cm")
+        )
+
+
+## Automatically adds interactivity
+fig <- ggplotly(p)
+
+fig <- fig %>% layout(hovermode = "x", 
+                      autosize = TRUE)
+
+fig 
+
+```
+
+Source: Center for Systems Science and Engineering (CSSE) at Johns Hopkins University [(COVID-19 Data Repository)](https://github.com/CSSEGISandData/COVID-19).
+
+Please note that there is an obvious error (as of February, the 14th, 2021) in the estimation of recovered cases in the original data from Johns Hopkins University for the 27th of January 2021. I "smoothed" the plot at this point by interpolating the number of recovered cases between the reported numbers from January 26th and January 28th, 2021. Non-cumulative, active cases were calculated as the difference between the cumulative active and the cumulative recovered and deceased curves. Also, in August 2021 Johns Hopkins University stopped listing the number of recovered cases for Germany, i.e. recovered and active cases are no longer depicted (from the 4th of August, 2021, onward).
+
+##  Cumulative, verified cases by state 
+
+```{r, echo=FALSE, out.width="100%",fig.asp = 1}
+
+df <- data.frame(FIPS=                 factor(),
+                 Admin2=               factor(),
+                 Province_State=       factor(),
+                 Country_Region=       factor(), 
+                 Last_Update=          character(),
+                 Lat=                  double(),
+                 Long_=                double(),
+                 Confirmed=            integer(),
+                 Deaths=               integer(),
+                 Recovered=            integer(),
+                 Active=               integer(),
+                 Combined_Key=         factor(),
+                 Incidence_Rate=       double(),
+                 Case_Fatality_Ratio=  double(),
+                 Date=                 character(),
+                 New=                  integer(),
+                 stringsAsFactors=FALSE
+)
+
+lastFile <- format(Sys.Date()-31, format="%m-%d-%Y")
+fileLocation <- paste('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/',lastFile,'.csv', sep = "")
+dataCov <- import(fileLocation)
+dataCovGermany2 <- subset(dataCov, dataCov$Country_Region == "Germany")
+dataCovGermany2 <- subset(dataCovGermany2, dataCovGermany2$Province_State != "Unknown")
+confirmedYesterday <- dataCovGermany2$Confirmed
+
+for (t in 30:1) {      #change to 30:1, if more recent data are available
+
+  lastFile <- format(Sys.Date()-t, format="%m-%d-%Y")
+
+  fileLocation <- paste('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/',lastFile,'.csv', sep = "")
+
+  dataCov <- import(fileLocation)
+
+  dataCovGermany <- subset(dataCov, dataCov$Country_Region == "Germany")
+  dataCovGermany <- subset(dataCovGermany, dataCovGermany$Province_State != "Unknown")
+  dataCovGermany$Date <- format(Sys.Date()-t, format="%m-%d-%Y")
+  dataCovGermany$Date <- parse_date_time(dataCovGermany$Date, "mdy")
+  dataCovGermany$New  <- (dataCovGermany$Confirmed-confirmedYesterday)
+  names(df) <- names(dataCovGermany)
+  df <- rbind(df, dataCovGermany) 
+  confirmedYesterday <- dataCovGermany$Confirmed
+}
+
+g <- ggplot(df, aes(x = Date, y = (Confirmed/1000), color = Province_State)) + 
+  geom_line() +
+  #ggtitle("Covid-19 - Confirmed Cases by State") +
+  xlab("Date") + 
+  ylab("Cumulative numbers in thousands") +
+  theme(plot.background = element_rect(fill = "grey95"),
+        panel.background = element_rect(fill = "white", colour = "black"),
+        panel.grid.major = element_line(colour = "grey85"),
+        legend.background = element_rect(fill = "grey95"),
+        panel.border = element_rect(fill = NA, colour = "black"),
+        legend.title = element_blank(),
+        plot.margin = unit(c(1,1,1,1), "cm")
+        ) 
+
+## Automatically adds interactivity
+ggplotly(g)
+
+#g + geom_point() + facet_wrap(~ Province_State, scales = "free")
+```
+
+Source: Center for Systems Science and Engineering (CSSE) at Johns Hopkins University [(COVID-19 Data Repository)](https://github.com/CSSEGISandData/COVID-19). 
+
+Please note that the graphs only present **reported** values. Occasionally, these values remain stable for two days, suggesting that no new cases occurred. This is, of course, highly unlikely given the current dynamics of the pandemic. My guess is that in these cases numbers were, for some reason (e.g. weekends), not reported on the second of two such days and added to the report of the subsequent day, which would also explain the high fluctuations in the day-to-day differences in reported cumulative cases of some states (e.g. Bavaria or North Rhine-Westphalia; see below). 
+
+## Day-to-day difference in cumulative cases
+
+```{r, echo=FALSE, message=FALSE, out.width="100%",fig.asp = 1}
+
+k <- ggplot(df, aes(x = Date, y = New) ) + 
+  geom_point() +
+  facet_wrap(~ Province_State, scales = "fixed") +
+  xlab("Date") + 
+  ylab("Reported cases") +
+  theme(plot.background = element_rect(fill = "grey95"),
+        panel.background = element_rect(fill = "white", colour = "black"),
+        panel.grid.major = element_line(colour = "grey85"),
+        panel.border = element_rect(fill = NA, colour = "black"),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        panel.spacing = unit(1, "lines"),
+        legend.position = "none",
+        text = element_text(size = 8)
+        ) +
+  geom_smooth(method = "loess")
+
+(k)
+
+```
+Source: Center for Systems Science and Engineering (CSSE) at Johns Hopkins University [(COVID-19 Data Repository)](https://github.com/CSSEGISandData/COVID-19). 
+ 
+Individual values were calculated as the difference of confirmed cases as reported by the CSSE on a given day to the reported cases of the preceding day. Blue lines represent LOESS regression lines.
+
+## R-Markdown
+
+All graphs presented in this blog were created with up-to-date data at the time of page rendering using R-Markdown. If you would like to know how, you will find the .rmd file [here](https://github.com/DaSchmidtke/CovidGermany/). 
